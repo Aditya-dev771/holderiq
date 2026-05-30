@@ -31,9 +31,29 @@ export async function POST(req: Request) {
       `${baseUrl}/getContractMetadata?contractAddress=${contract}`
     );
 
-    const ownersRes = await fetch(
-      `${baseUrl}/getOwnersForContract?contractAddress=${contract}&withTokenBalances=true`
+    let allOwners: any[] = [];
+let pageKey = "";
+
+do {
+  const ownersUrl = pageKey
+    ? `${baseUrl}/getOwnersForContract?contractAddress=${contract}&withTokenBalances=true&pageKey=${pageKey}`
+    : `${baseUrl}/getOwnersForContract?contractAddress=${contract}&withTokenBalances=true`;
+
+  const ownersRes = await fetch(ownersUrl);
+
+  if (!ownersRes.ok) {
+    return NextResponse.json(
+      { error: "Failed to fetch owners data" },
+      { status: 500 }
     );
+  }
+
+  const ownersData = await ownersRes.json();
+
+  allOwners = [...allOwners, ...(ownersData?.owners || [])];
+
+  pageKey = ownersData?.pageKey || "";
+} while (pageKey && allOwners.length < 10000);
 
     if (!metadataRes.ok) {
       return NextResponse.json(
@@ -42,15 +62,10 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!ownersRes.ok) {
-      return NextResponse.json(
-        { error: "Failed to fetch owners data" },
-        { status: 500 }
-      );
-    }
+    
 
     const metadata = await metadataRes.json();
-    const ownersData = await ownersRes.json();
+   
 
     const collectionName =
       metadata?.name ||
@@ -75,7 +90,7 @@ export async function POST(req: Request) {
       ? `https://opensea.io/collection/${metadata.openSeaMetadata.collectionSlug}`
       : "";
 
-    const owners = ownersData?.owners || [];
+    const owners = allOwners;
     const totalHolders = owners.length;
 
     const balances = owners.map((owner: any) => {
@@ -116,11 +131,11 @@ export async function POST(req: Request) {
     );
 
     const totalSupply =
-      Number(metadata?.totalSupply) ||
-      Number(metadata?.contractMetadata?.totalSupply) ||
-      Number(metadata?.contract?.totalSupply) ||
-      calculatedSupply;
-
+  calculatedSupply ||
+  Number(metadata?.totalSupply) ||
+  Number(metadata?.contractMetadata?.totalSupply) ||
+  Number(metadata?.contract?.totalSupply) ||
+  0;
     const top10Supply = top10.reduce(
       (sum: number, holder: any) => sum + holder.count,
       0
